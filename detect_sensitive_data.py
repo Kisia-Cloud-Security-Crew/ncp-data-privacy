@@ -1,3 +1,4 @@
+import csv
 import datetime
 import os
 import re
@@ -45,7 +46,7 @@ def scan_database():
     cursor.execute("SHOW TABLES")
     tables = [table[0] for table in cursor.fetchall()]
 
-    results = {}
+    results = []
 
     for table in tables:
         cursor.execute(f"DESCRIBE {table}")
@@ -60,10 +61,15 @@ def scan_database():
                     text = str(row[0])
                     detected = detect_sensitive_data(text)
                     if detected:
-                        # Store detected sensitive data for each table and column
-                        if f"{table}.{column}" not in results:
-                            results[f"{table}.{column}"] = []
-                        results[f"{table}.{column}"].append(detected)
+                        for data_type, matches in detected.items():
+                            for match in matches:
+                                # Ensure each item added to results is a dictionary
+                                results.append({
+                                    "Table.Column": f"{table}.{column}",
+                                    "Data_Type": data_type,
+                                    "Match": match,
+                                    "Sensitive": "민감"
+                                })
 
     cursor.close()
     conn.close()
@@ -75,20 +81,14 @@ scan_results = scan_database()
 
 now = datetime.datetime.now()
 dt = now.strftime("%Y-%m-%d_%H-%M-%S")
-with open(f"{dt}_output.txt", "w", encoding="utf-8") as f:
-    for location, sensitive_data in scan_results.items():
-        f.write(f"테이블&컬럼 위치: {location}\n")
-        
-        data_list = {}
-        for data in sensitive_data:
-            for data_type, matches in data.items():
-                if data_type not in data_list:
-                    data_list[data_type] = []
-                data_list[data_type].extend(matches)
-        
-        for data_type, matches in data_list.items():
-            unique_matches = list(set(matches))
-            unique_matches_str = [', '.join(map(str, match)) if isinstance(match, tuple) else match for match in unique_matches]
-            f.write(f"  {data_type}: {', '.join(unique_matches_str)}\n")
+csv_filename = f"{dt}_sensitive_data.csv"
 
-print(f"Results have been saved to {dt} output.txt.")
+with open(csv_filename, "w", encoding="utf-8-sig", newline="") as csvfile:
+    fieldnames = ["Table.Column", "Data_Type", "Match", "Sensitive"]
+    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+    
+    writer.writeheader()
+    for result in scan_results:
+        writer.writerow(result)
+
+print(f"Results have been saved to {csv_filename}.")
